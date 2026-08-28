@@ -180,7 +180,7 @@ fun reduce(s: State, e: Event): Step = …           // pure: no suspend, no lau
 val steps: Flow<Step> = events.runningFold(Step(Initial)) { step, e -> reduce(step.state, e) }
 ```
 
-`runningFold` emits the initial value first; `scan` is its alias. The fold is the *only* place state lives. If the reducer wants to cause an effect, it returns a `Command` in `Step`; see `feedback-loops.md`.
+`runningFold` emits the initial value first; `scan` is its alias. The fold is the *only* place state lives. If the reducer wants to cause an effect, it returns a `Command` in `Step`; see [`feedback-loops.md`](feedback-loops.md).
 
 ## 12. Effects belong in the graph
 

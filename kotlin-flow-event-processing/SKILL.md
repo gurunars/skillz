@@ -24,10 +24,10 @@ Reporting a transient status to a UI (`Connecting…`) is fine — *derive* it w
 
 When writing new event-processing code:
 
-1. **Identify the input flows.** Everything that arrives over time is a `Flow<Event>` (or a `Flow<Boolean>`, `Flow<Command>`). Callback interfaces are the same IO events in a different calling convention — convert them once at the boundary with an `asFlow()` extension on the callback-bearing type (`callbackFlow` inside; one-shot callbacks become suspend extensions instead), per `callback-interfaces.md`. Never a method like `fun onToggle(desired: Boolean)` that mutates a field.
+1. **Identify the input flows.** Everything that arrives over time is a `Flow<Event>` (or a `Flow<Boolean>`, `Flow<Command>`). Callback interfaces are the same IO events in a different calling convention — convert them once at the boundary with an `asFlow()` extension on the callback-bearing type (`callbackFlow` inside; one-shot callbacks become suspend extensions instead), per [`callback-interfaces.md`](callback-interfaces.md). Never a method like `fun onToggle(desired: Boolean)` that mutates a field.
 2. **Identify the persistent domain state**, if any. Often there is none — the output is just a transform of inputs. If there is, it is a fold: `runningFold` / `scan` over events with a **pure** reducer. Nothing suspends inside the reducer; nothing launches.
 3. **Map each transit behavior to an operator** using the table below. Write the chosen policy as a one-line comment at the call site (`// supersede: latest desired state wins`), because the choice between `flatMapLatest`, `flatMapConcat`, and `flatMapMerge` is the actual design decision and the reader must not have to infer it.
-4. **If the output feeds back into the input**, build the cycle explicitly per `feedback-loops.md`. Never close the loop through a shared `MutableStateFlow` that some other class writes into.
+4. **If the output feeds back into the input**, build the cycle explicitly per [`feedback-loops.md`](feedback-loops.md). Never close the loop through a shared `MutableStateFlow` that some other class writes into.
 5. **Expose the result** as a cold `Flow<State>` from a pure function, and let the caller decide hotness with `stateIn` / `shareIn`. The function signature should read like a dataflow graph: inputs in, flow out.
 6. **Run the checklist** at the bottom before finishing.
 
@@ -51,7 +51,7 @@ When reviewing or refactoring existing code: list every transit state and flag f
 | `scope.launch { }` inside `onEach` / `map` | Move the effect into the `flatMap*` stage | Effects are part of the graph, cancellable with it |
 | `MutableStateFlow` mutated from several places | One producer, `stateIn` at the edge | Single writer, no hidden coupling |
 
-Full snippets for each row: `operator-catalog.md`.
+Full snippets for each row: [`operator-catalog.md`](operator-catalog.md).
 
 ## Callback interfaces: convert at the boundary
 
@@ -62,7 +62,7 @@ A callback interface is an event stream delivered through a vtable — same IO e
 - **Bidirectional sessions** (callbacks in, method calls out) → one extension taking the outgoing `Flow` as a parameter; the writer is a collector inside the same `callbackFlow` lifetime.
 - The extension is dumb: it translates and manages registration lifetime, nothing else. Overflow policy is chosen explicitly at the seam; sharing one expensive registration is `shareIn` at the edge, never a listener list inside the adapter.
 
-Full patterns, anti-patterns, and tests: `callback-interfaces.md`.
+Full patterns, anti-patterns, and tests: [`callback-interfaces.md`](callback-interfaces.md).
 
 ## Feedback: output → input
 
@@ -72,7 +72,7 @@ Most loops are not really loops. Classify before reaching for a cycle:
 - **Level 2 — result selects next stage**: `flatMapConcat { result -> next(result) }`. Still acyclic; the "feedback" is just data flowing forward.
 - **Level 3 — real cycle** (command results are new events for the same reducer): explicit `runLoop` with a reducer producing `Step(state, commands)`, an executor coroutine, and buffered channels as the delay guard.
 
-Only Level 3 needs the full template. Read `feedback-loops.md` before writing one — it covers the template, the deadlock invariant, and why the effect-execution policy (`flatMapConcat` vs `flatMapLatest` vs `flatMapMerge`) is chosen in exactly one place.
+Only Level 3 needs the full template. Read [`feedback-loops.md`](feedback-loops.md) before writing one — it covers the template, the deadlock invariant, and why the effect-execution policy (`flatMapConcat` vs `flatMapLatest` vs `flatMapMerge`) is chosen in exactly one place.
 
 Invariants for any Level 3 loop:
 - Feedback events are a distinct type (`Event.Internal`) so the reducer's `when` is exhaustive and it is obvious which branches come from the loop.
@@ -82,7 +82,7 @@ Invariants for any Level 3 loop:
 
 ## Worked example
 
-`worked-example.md` shows a device connection controller written both ways: 90 lines of `TurningOn/TurningOff` + `Job?` + races, versus 12 lines of `distinctUntilChanged().flatMapLatest { }`. Read it when you want to see the shape of the refactor, or to calibrate what "done" looks like.
+[`worked-example.md`](worked-example.md) shows a device connection controller written both ways: 90 lines of `TurningOn/TurningOff` + `Job?` + races, versus 12 lines of `distinctUntilChanged().flatMapLatest { }`. Read it when you want to see the shape of the refactor, or to calibrate what "done" looks like.
 
 ## When a state machine is actually right
 

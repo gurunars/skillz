@@ -3,7 +3,6 @@ name: skills
 on:
   push:
     branches: [master]
-    tags: ["v*"]
   pull_request:
 
 permissions:
@@ -11,7 +10,7 @@ permissions:
 
 jobs:
   validate:
-    if: github.ref_type != 'tag'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,10 +19,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   publish:
-    if: github.ref_type == 'tag'
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: gh skill publish --tag "$GITHUB_REF_NAME"
+        with:
+          fetch-depth: 0 # full history — the version is the commit count
+      - run: gh skill publish --tag "v0.0.$(git rev-list --count HEAD)"
         env:
           GH_TOKEN: ${{ github.token }}

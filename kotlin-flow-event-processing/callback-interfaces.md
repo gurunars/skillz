@@ -147,7 +147,7 @@ fun SocketApi.asFlow(outgoing: Flow<Frame>): Flow<SocketEvent> = callbackFlow {
 
 - No `fun send(frame)` methods on a returned handle — the writer is a collector of `outgoing` and dies with the session automatically.
 - Cancellation closes the socket; the socket closing (`onClosed`) completes the flow. Both directions of shutdown converge on the same two lines.
-- This shape drops directly into the Level-3 loop from `feedback-loops.md`: `api.asFlow(outgoing)` is an `external` source, and `outgoing` is fed by the executor (`execute(cmd)` produces the frames to send). The callback interface never reaches the reducer.
+- This shape drops directly into the Level-3 loop from [`feedback-loops.md`](feedback-loops.md): `api.asFlow(outgoing)` is an `external` source, and `outgoing` is fed by the executor (`execute(cmd)` produces the frames to send). The callback interface never reaches the reducer.
 
 If a consumer must *await* a command's completion (request/response over the session), keep the session as above and correlate downstream: send tagged frames, `first { it.tag == myTag }` on the shared event flow — not by adding suspend methods to the adapter.
 
