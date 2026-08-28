@@ -9,6 +9,13 @@ Install any of them with:
 gh skill install gurunars/skillz <skill-name> --agent <claude-code|gemini|codex|cursor|antigravity>
 ```
 
+Every push to `master` publishes automatically as a
+[GitHub release](https://github.com/gurunars/skillz/releases) tagged
+`v0.0.<commit count>` — check the
+[latest release](https://github.com/gurunars/skillz/releases/latest) to see
+what is currently installable, or `gh skill preview gurunars/skillz <skill-name>`
+to inspect a skill without installing it.
+
 ## Skills
 
 ### [skill-authoring](skill-authoring/SKILL.md)
