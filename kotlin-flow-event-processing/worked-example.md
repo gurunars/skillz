@@ -23,9 +23,16 @@ class DeviceController(private val scope: CoroutineScope, private val driver: Dr
 
     fun setEnabled(on: Boolean) {
         when (_state.value) {
-            State.TurningOn, State.TurningOff -> { pendingDesired = on; return }   // busy — remember for later
-            is State.On, is State.Error -> if (!on) turnOff()
-            State.Off -> if (on) turnOn()
+            State.TurningOn, State.TurningOff -> {   // busy — remember for later
+                pendingDesired = on
+                return
+            }
+            is State.On, is State.Error -> if (!on) {
+                turnOff()
+            }
+            State.Off -> if (on) {
+                turnOn()
+            }
         }
     }
 
@@ -36,7 +43,17 @@ class DeviceController(private val scope: CoroutineScope, private val driver: Dr
                 driver.connect()
                 _state.value = State.On(null)
                 readingsJob = launch {
-                    driver.readings().collect { r -> _state.update { if (it is State.On) State.On(r) else it } }
+                    driver
+                        .readings()
+                        .collect { r ->
+                        _state.update {
+                            if (it is State.On) {
+                                State.On(r)
+                            } else {
+                                it
+                            }
+                        }
+                    }
                 }
             } catch (t: Throwable) {
                 _state.value = State.Error(t)
@@ -48,7 +65,8 @@ class DeviceController(private val scope: CoroutineScope, private val driver: Dr
 
     private fun turnOff() {
         _state.value = State.TurningOff
-        readingsJob?.cancel(); readingsJob = null
+        readingsJob?.cancel()
+        readingsJob = null
         connectJob = scope.launch {
             try { driver.disconnect() } finally {
                 _state.value = State.Off
@@ -88,11 +106,18 @@ fun deviceStatus(desired: Flow<Boolean>, driver: Driver): Flow<Status> =
     desired
         .distinctUntilChanged()
         .flatMapLatest { on ->                                    // supersede: newest switch position wins
-            if (!on) flowOf(Status.Off)
-            else driver.session()                                 // Flow<Reading>; cancellation == disconnect
-                .map<Reading, Status> { Status.On(it) }
-                .onStart { emit(Status.Connecting); emit(Status.On(null)) }
-                .catch { emit(Status.Error(it)) }
+            if (!on) {
+                flowOf(Status.Off)
+            } else {
+                driver
+                    .session()                                    // Flow<Reading> — cancellation == disconnect
+                    .map<Reading, Status> { Status.On(it) }
+                    .onStart {
+                        emit(Status.Connecting)
+                        emit(Status.On(null))
+                    }
+                    .catch { emit(Status.Error(it)) }
+            }
         }
 ```
 
@@ -100,9 +125,12 @@ with the driver exposing the connection *as a flow*:
 
 ```kotlin
 fun Driver.session(): Flow<Reading> = callbackFlow {
-    connect()                                   // suspends until connected; throws on failure
+    connect()                                   // suspends until connected, throws on failure
     val sub = subscribe { reading -> trySend(reading) }
-    awaitClose { sub.cancel(); disconnect() }   // cancellation IS disconnect
+    awaitClose {                                // cancellation IS disconnect
+        sub.cancel()
+        disconnect()
+    }
 }
 ```
 
@@ -133,7 +161,9 @@ Test:
     val desired = MutableSharedFlow<Boolean>()
     val driver = FakeDriver(readings = flowOf(Reading(1)))
     deviceStatus(desired, driver).test {
-        desired.emit(true); desired.emit(false); desired.emit(true)
+        desired.emit(true)
+        desired.emit(false)
+        desired.emit(true)
         // whatever interleaving happens, the final state follows the last position
         assertEquals(Status.On(Reading(1)), expectMostRecentItem())
         assertEquals(1, driver.openSessions)
@@ -146,8 +176,13 @@ Test:
 That is Level 2 feedback (result selects next stage), not a state machine:
 
 ```kotlin
-driver.session()
-    .flatMapConcat { session -> session.handshake().map { session to it } }   // result selects next stage
+driver
+    .session()
+    .flatMapConcat { session ->                                   // result selects next stage
+        session
+            .handshake()
+            .map { session to it }
+    }
     .flatMapConcat { (session, caps) -> session.readings(caps.rate) }
 ```
 

@@ -52,9 +52,12 @@ The output of a stage is the input to the *next* stage, never to the same one. C
 ```kotlin
 fun stream(links: Flow<Link>): Flow<Message> =
     links.flatMapLatest { link ->                                   // supersede: a new link aborts the old session
-        link.open()                                                 // Flow<Session>, cancellation = close
+        link
+            .open()                                                 // Flow<Session>, cancellation = close
             .flatMapConcat { session ->                             // result selects next stage
-                session.authenticate().map { session to it }
+                session
+                    .authenticate()
+                    .map { session to it }
             }
             .flatMapConcat { (session, auth) ->
                 session.subscribe(auth.grantedTopics)               // Flow<Message>
@@ -89,7 +92,8 @@ fun <S, C> runLoop(
 
     // Executor. The ONLY place the effect-execution policy is chosen.
     launch {
-        commands.receiveAsFlow()
+        commands
+            .receiveAsFlow()
             .flatMapConcat(execute)                   // queue: one command at a time, in order
             .collect { feedback.send(it) }
     }
@@ -109,7 +113,10 @@ fun <S, C> runLoop(
 Concrete reducer for a sync loop:
 
 ```kotlin
-sealed interface SyncState { object Idle : SyncState; data class Syncing(val queuedAgain: Boolean) : SyncState }
+sealed interface SyncState {
+    object Idle : SyncState
+    data class Syncing(val queuedAgain: Boolean) : SyncState
+}
 sealed interface Cmd { object Sync : Cmd }
 
 object SyncRequested : Event.External
@@ -119,12 +126,15 @@ data class SyncFinished(val ok: Boolean) : Event.Internal
 fun reduce(s: SyncState, e: Event): Step<SyncState, Cmd> = when (s) {
     SyncState.Idle -> when (e) {
         SyncRequested, Online -> Step(SyncState.Syncing(queuedAgain = false), listOf(Cmd.Sync))
-        is SyncFinished -> Step(s)                                  // stale; ignore
+        is SyncFinished -> Step(s)                                  // stale — ignore
     }
     is SyncState.Syncing -> when (e) {
         SyncRequested, Online -> Step(s.copy(queuedAgain = true))   // coalesce
-        is SyncFinished -> if (s.queuedAgain) Step(SyncState.Syncing(false), listOf(Cmd.Sync))
-                           else Step(SyncState.Idle)
+        is SyncFinished -> if (s.queuedAgain) {
+            Step(SyncState.Syncing(false), listOf(Cmd.Sync))
+        } else {
+            Step(SyncState.Idle)
+        }
     }
 }
 ```
@@ -174,7 +184,7 @@ or `first { it is SyncState.Done }` if you only want the terminal state.
 
 - **Reducer**: plain function tests. `reduce(Idle, SyncRequested) == Step(Syncing(false), [Sync])`. No coroutines.
 - **Loop**: `runTest` + a fake `execute` that returns `flowOf(SyncFinished(ok = true))`, collect with `toList()` after `takeWhile`, or with Turbine. Assert the sequence of states, not the timing.
-- **Executor policy**: test by making `execute` a `flow { delay(…); emit(…) }` and checking whether overlapping commands interleave, cancel, or queue.
+- **Executor policy**: test by making `execute` a `flow` that `delay`s before it emits, and checking whether overlapping commands interleave, cancel, or queue.
 
 ## 9. Anti-patterns
 

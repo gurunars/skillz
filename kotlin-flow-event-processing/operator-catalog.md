@@ -25,15 +25,33 @@ Each entry shows the hand-rolled version and the operator that replaces it. All 
 **Smell**
 
 ```kotlin
-sealed interface S { object Off : S; object TurningOn : S; object On : S; object TurningOff : S }
-private var state: S = S.Off
+sealed interface S {
+    object Off : S
+    object TurningOn : S
+    object On : S
+    object TurningOff : S
+}
+
+private val state = MutableStateFlow<S>(S.Off)
 private var job: Job? = null
 
 fun setEnabled(on: Boolean) {
-    when (state) {
+    when (state.value) {
         S.TurningOn, S.TurningOff -> return          // "busy", silently dropped
-        S.On -> if (!on) { state = S.TurningOff; job = scope.launch { disconnect(); state = S.Off } }
-        S.Off -> if (on) { state = S.TurningOn; job = scope.launch { connect(); state = S.On } }
+        S.On -> if (!on) {
+            state.value = S.TurningOff
+            job = scope.launch {
+                disconnect()
+                state.value = S.Off
+            }
+        }
+        S.Off -> if (on) {
+            state.value = S.TurningOn
+            job = scope.launch {
+                connect()
+                state.value = S.On
+            }
+        }
     }
 }
 ```
@@ -45,8 +63,13 @@ fun connection(desired: Flow<Boolean>, connect: () -> Flow<Session>): Flow<Statu
     desired
         .distinctUntilChanged()
         .flatMapLatest { on ->                           // supersede: newest desired state wins
-            if (on) connect().map { Status.On(it) }.onStart { emit(Status.Connecting) }
-            else flowOf(Status.Off)
+            if (on) {
+                connect()
+                    .map { Status.On(it) }
+                    .onStart { emit(Status.Connecting) }
+            } else {
+                flowOf(Status.Off)
+            }
         }
 ```
 
@@ -80,7 +103,19 @@ If the producer must never suspend, add `.buffer(capacity)` upstream and decide 
 ```kotlin
 private var pending: Request? = null
 private var busy = false
-fun submit(r: Request) { if (busy) { pending = r; return }; busy = true; scope.launch { run(r); busy = false; pending?.let(::submit) } }
+
+fun submit(r: Request) {
+    if (busy) {
+        pending = r
+        return
+    }
+    busy = true
+    scope.launch {
+        run(r)
+        busy = false
+        pending?.let(::submit)
+    }
+}
 ```
 
 **Operator**
@@ -110,7 +145,12 @@ Order of results is not preserved. If it must be, use `flatMapConcat` or tag res
 ```kotlin
 fetch()
     .retryWhen { cause, attempt ->
-        cause is IOException && attempt < 5 && run { delay(200L shl attempt.toInt()); true }
+        if (cause is IOException && attempt < 5) {
+            delay(200L shl attempt.toInt())
+            true
+        } else {
+            false
+        }
     }
 ```
 
@@ -120,10 +160,20 @@ The retry count lives in the operator's closure for the duration of one collecti
 
 | Hand-rolled | Operator |
 |---|---|
-| `debounceJob?.cancel(); debounceJob = launch { delay(300); fire() }` | `.debounce(300.milliseconds)` |
+| a `debounceJob` field: cancel the old one, `launch` a new one that `delay`s then fires | `.debounce(300.milliseconds)` |
 | "emit at most once per second" | `.sample(1.seconds)` |
 | "give up if no value in 5 s" | `.timeout(5.seconds)` (throws) or `mapLatest { withTimeoutOrNull(5.seconds) { … } }` |
-| Heartbeat | `flow { while (true) { emit(Unit); delay(period) } }` merged as an input |
+
+A heartbeat is not a timer `Job` either — it is an input flow, merged with the others:
+
+```kotlin
+flow {
+    while (true) {
+        emit(Unit)
+        delay(period)
+    }
+}
+```
 
 ## 7. Deduplicate
 
@@ -156,7 +206,9 @@ fun <T, K, R> Flow<T>.flatMapLatestByKey(key: (T) -> K, transform: (T) -> Flow<R
     val jobs = HashMap<K, Job>()
     collect { value ->
         val k = key(value)
-        jobs.remove(k)?.cancelAndJoin()
+        jobs
+            .remove(k)
+            ?.cancelAndJoin()
         jobs[k] = launch { transform(value).collect { send(it) } }
     }
 }
@@ -170,7 +222,13 @@ Call sites then read `events.flatMapLatestByKey({ it.deviceId }) { …per-device
 
 ```kotlin
 private var state = Initial
-fun on(e: Event) { state = when (e) { … }; if (state is Ready) scope.launch { … } }
+
+fun on(e: Event) {
+    state = when (e) { … }
+    if (state is Ready) {
+        scope.launch { … }
+    }
+}
 ```
 
 **Operator**
@@ -187,7 +245,9 @@ val steps: Flow<Step> = events.runningFold(Step(Initial)) { step, e -> reduce(st
 **Smell**
 
 ```kotlin
-events.onEach { scope.launch { sideEffect(it) } }.launchIn(scope)
+events
+    .onEach { scope.launch { sideEffect(it) } }
+    .launchIn(scope)
 ```
 
 The launched job is now outside the flow's cancellation and completion. Move it in:

@@ -5,7 +5,8 @@ A callback interface is an event stream delivered through a vtable instead of a 
 **Convert at the boundary, exactly once, via an `asFlow()` extension on the callback-bearing type. Everything past the boundary is Flow.**
 
 ```kotlin
-scannerApi.asFlow()                    // Flow<ScanEvent>
+scannerApi
+    .asFlow()                          // Flow<ScanEvent>
     .filterIsInstance<ScanEvent.Found>()
     .flatMapLatest { ... }
 ```
@@ -119,7 +120,9 @@ If the underlying registration is expensive or the API allows only one listener 
 
 ```kotlin
 val scans: SharedFlow<ScanEvent> =
-    scannerApi.asFlow().shareIn(scope, SharingStarted.WhileSubscribed(5_000), replay = 0)
+    scannerApi
+        .asFlow()
+        .shareIn(scope, SharingStarted.WhileSubscribed(5_000), replay = 0)
 ```
 
 `WhileSubscribed` gives you reference-counted registration for free: the first collector registers, the last one leaving unregisters. That is the hand-rolled `listeners.isEmpty() -> api.unregister()` bookkeeping, deleted.
@@ -138,7 +141,13 @@ fun SocketApi.asFlow(outgoing: Flow<Frame>): Flow<SocketEvent> = callbackFlow {
     val socket = open(object : SocketListener {
         override fun onOpen() { trySend(SocketEvent.Connected) }
         override fun onFrame(f: Frame) { trySend(SocketEvent.Received(f)) }
-        override fun onClosed(cause: Throwable?) { if (cause != null) close(cause) else close() }
+        override fun onClosed(cause: Throwable?) {
+            if (cause != null) {
+                close(cause)
+            } else {
+                close()
+            }
+        }
     })
     launch { outgoing.collect { socket.send(it) } }           // commands out: a collector inside the same lifetime
     awaitClose { socket.close() }
@@ -180,7 +189,9 @@ The extension is dumb, so its tests are dumb — and everything downstream never
 
   @Test fun `error callback fails the flow and unregisters`() = runTest {
       val api = FakeScannerApi()
-      api.asFlow().test {                                   // Turbine
+      api
+          .asFlow()
+          .test {                                           // Turbine
           api.listener!!.onFound(device)
           assertEquals(ScanEvent.Found(device), awaitItem())
           api.listener!!.onError(Boom)
