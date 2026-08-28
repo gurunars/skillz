@@ -5,7 +5,6 @@ on:
     branches: [master]
     tags: ["v*"]
   pull_request:
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -16,21 +15,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: make check
-      - run: make validate
+      - run: gh skill publish --dry-run
         env:
           GH_TOKEN: ${{ github.token }}
-      - run: make build
-      - uses: actions/upload-artifact@v4
-        with:
-          name: skill-bundles
-          path: dist/*.skill
 
   publish:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: make publish TAG=${{ github.ref_name }}
+      - run: gh skill publish --tag "$GITHUB_REF_NAME"
         env:
           GH_TOKEN: ${{ github.token }}
